@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H168 ONLINE PRO</title>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<style>
+body{ margin:0; font-family:Arial; background:#000; color:gold; text-align:center; overflow-x:hidden; }
+.logo{ width:250px; margin-top:10px; filter:drop-shadow(0 0 10px gold); }
+.card{ background:rgba(20,20,20,0.9); border:1px solid gold; margin:10px auto; padding:15px; width:90%; max-width:350px; border-radius:15px; box-shadow: 0 0 20px rgba(255,215,0,0.2); }
+input{ padding:12px; margin:5px; border-radius:5px; border:none; width:80%; font-size:16px; }
+button{ padding:12px; margin:5px; background:linear-gradient(to right,gold,orange); border:none; border-radius:5px; cursor:pointer; font-weight:bold; width:85%; font-size:16px; }
+.shaking { animation: shake 0.2s infinite; display: inline-block; }
+@keyframes shake { 0%{transform:translate(2px,2px)} 50%{transform:translate(-2px,-2px)} 100%{transform:translate(2px,2px)} }
+.dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin:2px; border:1px solid #fff; }
+.dot-big { background: red; box-shadow: 0 0 5px red; } 
+.dot-small { background: blue; box-shadow: 0 0 5px blue; }
+#status { font-size: 12px; color: #aaa; margin-top: 5px; }
+</style>
+</head>
+<body>
+
+<img src="logo.png" class="logo">
+<div id="status">Đang kết nối server...</div>
+
+<div id="loginPage" class="card">
+  <input id="username" placeholder="Tên tài khoản"><br>
+  <input id="password" type="password" placeholder="Mật khẩu"><br>
+  <button onclick="login()">VÀO GAME</button>
+  <p style="font-size:12px">Admin: user 'admin', pass '1'</p>
+</div>
+
+<div id="dashboard" style="display:none;">
+  <div class="card">
+    <h3 style="margin:5px">PHIÊN: #<span id="sessionDisplay">000000</span></h3>
+    <p>Tiền: <span id="score" style="color:lime; font-weight:bold">0</span></p>
+    <p>Thời gian: <span id="time" style="color:orange; font-size:32px">45</span>s</p>
+    <div style="font-size:60px; margin:15px; height:70px">
+      <span id="dice1">🎲</span> <span id="dice2">🎲</span> <span id="dice3">🎲</span>
+    </div>
+    <button onclick="selectChoice('big')">Cược TÀI (Lớn)</button>
+    <button onclick="selectChoice('small')">Cược XỈU (Bé)</button>
+    <p id="betInfo" style="color:cyan; height:20px"></p>
+    <p id="resultText" style="font-size:22px; height:30px"></p>
+    <div id="dotContainer" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<div id="adminPage" style="display:none;">
+  <div class="card" style="border-color: red;">
+    <h2 style="color:red; margin:5px">👑 ĐIỀU KHIỂN</h2>
+    <p>Thời gian phiên: <b id="adminTime" style="font-size:20px">0</b>s</p>
+    <button onclick="setForced('big')">ÉP RA TÀI</button>
+    <button onclick="setForced('small')">ÉP RA XỈU</button>
+    <button onclick="setForced('random')" style="background:gray">ĐỂ NGẪU NHIÊN</button>
+    <p>Lệnh hiện tại: <b id="forceStatus" style="color:lime">RANDOM</b></p>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CHỖ NÀY CỰC QUAN TRỌNG: DÁN LINK FIREBASE CỦA ÔNG VÀO ĐÂY
+// ============================================================
+const firebaseConfig = {
+  databaseURL: "DÁN_CÁI_LINK_HTTPS_CỦA_ÔNG_VÀO_ĐÂY" 
+};
+// ============================================================
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let currentUser = null;
+let betData = { choice: null, amount: 0 };
+
+function login() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  if(!u) return alert("Nhập tên đã ông ơi!");
+
+  if(u === 'admin' && p === '1') {
+    currentUser = { role: 'admin' };
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('adminPage').style.display = 'block';
+    startAdminLoop(); // Admin vào thì máy chủ mới chạy
+  } else {
+    currentUser = { role: 'user', username: u, balance: 10000 };
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('score').innerText = currentUser.balance;
+  }
+  document.getElementById('status').innerText = "Online - Đang chơi: " + u;
+}
+
+// ADMIN ĐIỀU KHIỂN THỜI GIAN
+function startAdminLoop() {
+  setInterval(() => {
+    db.ref('gameState').once('value', (snap) => {
+      let data = snap.val() || { timeLeft: 45, session: 100000, forced: 'random' };
+      let nextTime = data.timeLeft - 1;
+      if(nextTime < 0) {
+        nextTime = 45;
+        db.ref('gameState').update({
+          session: Math.floor(100000 + Math.random()*899999),
+          forced: 'random'
+        });
+      }
+      db.ref('gameState').update({ timeLeft: nextTime });
+    });
+  }, 1000);
+}
+
+function setForced(type) { db.ref('gameState').update({ forced: type }); }
+
+// ĐỒNG BỘ DỮ LIỆU TỪ FIREBASE VỀ MÁY NGƯỜI CHƠI
+db.ref('gameState').on('value', (snap) => {
+  const data = snap.val();
+  if(!data) return;
+  if(document.getElementById('time')) {
+    document.getElementById('time').innerText = data.timeLeft;
+    document.getElementById('adminTime').innerText = data.timeLeft;
+    document.getElementById('sessionDisplay').innerText = data.session;
+    document.getElementById('forceStatus').innerText = data.forced.toUpperCase();
+  }
+  if(data.timeLeft === 0) { handleRoll(data.forced); }
+});
+
+function selectChoice(type) {
+  let amt = parseInt(prompt("Nhập số tiền cược:"));
+  if(!amt || amt <= 0 || amt > currentUser.balance) return alert("Tiền không hợp lệ!");
+  betData = { choice: type, amount: amt };
+  currentUser.balance -= amt;
+  document.getElementById('score').innerText = currentUser.balance;
+  document.getElementById('betInfo').innerText = "Đã đặt " + amt + " vào " + (type=='big'?'TÀI':'XỈU');
+}
+
+function handleRoll(forced) {
+  const d1_el = document.getElementById('dice1');
+  const d2_el = document.getElementById('dice2');
+  const d3_el = document.getElementById('dice3');
+  d1_el.classList.add('shaking'); d2_el.classList.add('shaking'); d3_el.classList.add('shaking');
+
+  setTimeout(() => {
+    d1_el.classList.remove('shaking'); d2_el.classList.remove('shaking'); d3_el.classList.remove('shaking');
+    let d1, d2, d3, total;
+    do {
+      d1 = Math.floor(Math.random()*6)+1;
+      d2 = Math.floor(Math.random()*6)+1;
+      d3 = Math.floor(Math.random()*6)+1;
+      total = d1 + d2 + d3;
+    } while ((forced === 'big' && total < 11) || (forced === 'small' && total > 10));
+
+    d1_el.innerText = d1; d2_el.innerText = d2; d3_el.innerText = d3;
+    
+    if(betData.amount > 0) {
+      let winType = total >= 11 ? 'big' : 'small';
+      if(betData.choice === winType) {
+        let win = betData.amount * 2;
+        currentUser.balance += win;
+        document.getElementById('resultText').innerHTML = "<b style='color:lime'>THẮNG +"+win+"</b>";
+      } else {
+        document.getElementById('resultText').innerHTML = "<b style='color:red'>THUA! (Tổng "+total+")</b>";
+      }
+      document.getElementById('score').innerText = currentUser.balance;
+      betData = { choice: null, amount: 0 };
+      document.getElementById('betInfo').innerText = "";
+    }
+    
+    let dot = document.createElement("span");
+    dot.className = "dot " + (total >= 11 ? "dot-big" : "dot-small");
+    document.getElementById('dotContainer').appendChild(dot);
+    setTimeout(() => { document.getElementById('resultText').innerText = ""; }, 4000);
+  }, 2000);
+}
+</script>
+</body>
+</html>
